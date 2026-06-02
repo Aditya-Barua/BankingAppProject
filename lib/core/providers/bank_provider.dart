@@ -3,12 +3,11 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 
 class BankProvider with ChangeNotifier {
-  // final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   UserModel? _currentUser;
   List<TransactionModel> _recentTransactions = [];
   bool _isLoading = false;
-  final bool _isMockMode = true;
 
   UserModel? get currentUser => _currentUser;
   List<TransactionModel> get recentTransactions => _recentTransactions;
@@ -18,23 +17,12 @@ class BankProvider with ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      if (_isMockMode) {
-        await Future.delayed(const Duration(seconds: 1));
-        _currentUser = UserModel(
-          id: userId,
-          email: 'user@example.com',
-          fullName: 'John Doe',
-          balance: 12450.00,
-          accountNumber: '1234567890',
-        );
-      } else {
-        // final doc = await _firestore.collection('users').doc(userId).get();
-        // if (doc.exists) {
-        //   _currentUser = UserModel.fromMap(doc.data()!, doc.id);
-        // }
+      final doc = await _firestore.collection('users').doc(userId).get();
+      if (doc.exists && doc.data() != null) {
+        _currentUser = UserModel.fromMap(doc.data()!, doc.id);
       }
     } catch (e) {
-      rethrow;
+      debugPrint('Error fetching user data: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -43,34 +31,20 @@ class BankProvider with ChangeNotifier {
 
   Future<void> fetchTransactions(String userId) async {
     try {
-      if (_isMockMode) {
-        await Future.delayed(const Duration(milliseconds: 500));
-        _recentTransactions = [
-          TransactionModel(
-            id: '1',
-            type: 'debit',
-            category: 'shopping',
-            amount: 45.00,
-            description: 'Grocery Store',
-            date: DateTime.now(),
-            status: 'completed',
-          ),
-          TransactionModel(
-            id: '2',
-            type: 'credit',
-            category: 'transfer',
-            amount: 150.00,
-            description: 'Salary Deposit',
-            date: DateTime.now().subtract(const Duration(days: 1)),
-            status: 'completed',
-          ),
-        ];
-      } else {
-        // final snapshot = await _firestore...
-      }
+      final snapshot = await _firestore
+          .collection('transactions')
+          .where('userId', isEqualTo: userId)
+          .orderBy('date', descending: true)
+          .limit(10)
+          .get();
+
+      _recentTransactions = snapshot.docs
+          .map((doc) => TransactionModel.fromMap(doc.data(), doc.id))
+          .toList();
+
       notifyListeners();
     } catch (e) {
-      rethrow;
+      debugPrint('Error fetching transactions: $e');
     }
   }
 
@@ -84,20 +58,34 @@ class BankProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      if (_isMockMode) {
-        await Future.delayed(const Duration(seconds: 2));
-        // Mock successful transfer
-        if (_currentUser != null) {
-          _currentUser = UserModel(
-            id: _currentUser!.id,
-            email: _currentUser!.email,
-            fullName: _currentUser!.fullName,
-            balance: _currentUser!.balance - amount,
-            accountNumber: _currentUser!.accountNumber,
-          );
-        }
-      } else {
-        // Real implementation...
+      // In a real app, this would be a Firestore Transaction or Cloud Function
+      // to ensure atomicity. For now, we update the local user balance.
+
+      // Update local state for demo purposes
+      if (_currentUser != null) {
+        final newBalance = _currentUser!.balance - amount;
+
+        await _firestore.collection('users').doc(fromUserId).update({
+          'balance': newBalance,
+        });
+
+        // Record the transaction
+        await _firestore.collection('transactions').add({
+          'userId': fromUserId,
+          'type': 'debit',
+          'amount': amount,
+          'description': 'Transfer to $toAccountNumber: $description',
+          'date': FieldValue.serverTimestamp(),
+          'status': 'completed',
+        });
+
+        _currentUser = UserModel(
+          id: _currentUser!.id,
+          email: _currentUser!.email,
+          fullName: _currentUser!.fullName,
+          balance: newBalance,
+          accountNumber: _currentUser!.accountNumber,
+        );
       }
     } catch (e) {
       rethrow;

@@ -100,10 +100,45 @@ Uses `firebase_messaging`.
 
 ## 5. Backend Integration (Firebase)
 
+### Firebase Project Details
+
+- **Project Console:** [https://console.firebase.google.com/u/0/project/banking-app-b193e/overview](https://console.firebase.google.com/u/0/project/banking-app-b193e/overview)
+
+### Setup Steps
+
+1. **Android Configuration:**
+   - Download `google-services.json` from the Firebase Console.
+   - Place it in: `android/app/google-services.json`.
+   - The project Gradle files have been pre-configured to support Google Services.
+
+2. **Web Configuration:**
+   - If you are running on **Chrome**, you must add your Web App config in `lib/main.dart`.
+   - Go to Firebase Console -> Project Settings -> General -> Your Apps.
+   - Click the `</>` icon to add a Web App.
+   - Copy the `firebaseConfig` object and paste the values into the `FirebaseOptions` in [main.dart](file:///E:/Bank/lib/main.dart).
+
 ### Database Design (Cloud Firestore)
 
 - `users/`: Stores profile info, balance, and account numbers.
-- `users/{uid}/transactions/`: A sub-collection for high-performance transaction queries.
+- `transactions/`: Stores all transaction records with `userId` for filtering.
+
+### Firestore Security Rules
+
+Implement these rules in your Firebase Console to secure user data:
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /transactions/{transactionId} {
+      allow read, create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+    }
+  }
+}
+```
 
 ---
 

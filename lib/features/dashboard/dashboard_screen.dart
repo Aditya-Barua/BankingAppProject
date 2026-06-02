@@ -26,7 +26,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final authService = context.read<AuthService>();
       final bankProvider = context.read<BankProvider>();
       if (authService.isAuthenticated) {
-        final userId = authService.user?.uid ?? 'mock_uid_123';
+        final userId = authService.user!.uid;
         bankProvider.fetchUserData(userId);
         bankProvider.fetchTransactions(userId);
       }
@@ -57,9 +57,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
           return RefreshIndicator(
             onRefresh: () async {
               final authService = context.read<AuthService>();
-              final userId = authService.user?.uid ?? 'mock_uid_123';
-              await provider.fetchUserData(userId);
-              await provider.fetchTransactions(userId);
+              if (authService.isAuthenticated) {
+                final userId = authService.user!.uid;
+                await provider.fetchUserData(userId);
+                await provider.fetchTransactions(userId);
+              }
             },
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
