@@ -8,6 +8,7 @@ import '../payments/bill_payment_screen.dart';
 import '../payments/check_deposit_screen.dart';
 import '../transactions/transactions_screen.dart';
 import '../settings/atm_locator_screen.dart';
+import '../profile/profile_screen.dart';
 
 import '../../core/providers/bank_provider.dart';
 
@@ -40,12 +41,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
         title: const Text('SecureBank'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.notifications_none),
-            onPressed: () {},
+            icon: const Icon(Icons.person_outline),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ProfileScreen()),
+              );
+            },
           ),
           IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => context.read<AuthService>().logout(),
+            icon: const Icon(Icons.notifications_none),
+            onPressed: () {},
           ),
         ],
       ),
@@ -68,6 +74,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _buildWelcomeHeader(context, provider),
                   _buildBalanceCard(context, provider),
                   _buildQuickActions(context),
                   _buildRecentTransactions(context, provider),
@@ -111,6 +118,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
             label: 'History',
           ),
           BottomNavigationBarItem(icon: Icon(Icons.map), label: 'ATM'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWelcomeHeader(BuildContext context, BankProvider provider) {
+    final user = provider.currentUser;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            user != null ? 'Welcome, ${user.fullName}' : 'Welcome Back',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Check your account status today',
+            style: TextStyle(color: Colors.grey, fontSize: 14),
+          ),
         ],
       ),
     );
@@ -284,11 +315,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   itemBuilder: (context, index) {
                     final tx = transactions[index];
                     final isCredit = tx.type == 'credit';
+                    
+                    IconData icon;
+                    if (isCredit) {
+                      icon = Icons.arrow_downward;
+                    } else if (tx.description.toLowerCase().contains('transfer')) {
+                      icon = Icons.swap_horiz;
+                    } else if (tx.description.toLowerCase().contains('bill')) {
+                      icon = Icons.receipt;
+                    } else {
+                      icon = Icons.shopping_bag;
+                    }
+
                     return ListTile(
                       leading: CircleAvatar(
                         backgroundColor: AppColors.background,
                         child: Icon(
-                          isCredit ? Icons.arrow_downward : Icons.shopping_bag,
+                          icon,
                           color: AppColors.primary,
                         ),
                       ),

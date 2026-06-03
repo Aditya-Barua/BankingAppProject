@@ -5,6 +5,7 @@ import 'features/auth/login_screen.dart';
 import 'features/dashboard/dashboard_screen.dart';
 import 'services/auth/auth_service.dart';
 import 'core/providers/bank_provider.dart';
+import 'core/providers/profile_provider.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
@@ -18,7 +19,7 @@ void main() async {
       // You can find this in your Firebase Console -> Project Settings -> General -> Your Apps -> Web App
       await Firebase.initializeApp(
         options: const FirebaseOptions(
-          apiKey: "AIzaSyDivUAhmEFN0zDKk20WOeoQaGIlepHTvww",
+          apiKey: "AIzaSyDivUAhmEFN0zDKk20WOeoQaGIlepHTvww ",
           appId: "1:733344360667:web:4940c97b66f046c774c4fe",
           messagingSenderId: "733344360667",
           projectId: "banking-app-b193e",
@@ -39,6 +40,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()),
         ChangeNotifierProvider(create: (_) => BankProvider()),
+        ChangeNotifierProvider(create: (_) => ProfileProvider()),
       ],
       child: const BankApp(),
     ),

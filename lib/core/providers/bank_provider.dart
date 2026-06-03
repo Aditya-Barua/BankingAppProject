@@ -8,7 +8,6 @@ class BankProvider with ChangeNotifier {
   UserModel? _currentUser;
   List<TransactionModel> _recentTransactions = [];
   bool _isLoading = false;
-
   UserModel? get currentUser => _currentUser;
   List<TransactionModel> get recentTransactions => _recentTransactions;
   bool get isLoading => _isLoading;
@@ -29,13 +28,17 @@ class BankProvider with ChangeNotifier {
     }
   }
 
+  String? _transactionError;
+  String? get transactionError => _transactionError;
+
   Future<void> fetchTransactions(String userId) async {
+    _transactionError = null;
     try {
       final snapshot = await _firestore
           .collection('transactions')
           .where('userId', isEqualTo: userId)
           .orderBy('date', descending: true)
-          .limit(10)
+          .limit(50)
           .get();
 
       _recentTransactions = snapshot.docs
@@ -45,6 +48,31 @@ class BankProvider with ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('Error fetching transactions: $e');
+      _transactionError = e.toString();
+
+      // Fallback: try fetching without ordering if it's an index error
+      if (e.toString().contains('failed-precondition') ||
+          e.toString().contains('index')) {
+        try {
+          final fallbackSnapshot = await _firestore
+              .collection('transactions')
+              .where('userId', isEqualTo: userId)
+              .limit(50)
+              .get();
+
+          _recentTransactions = fallbackSnapshot.docs
+              .map((doc) => TransactionModel.fromMap(doc.data(), doc.id))
+              .toList();
+
+          // Sort locally as a fallback
+          _recentTransactions.sort((a, b) => b.date.compareTo(a.date));
+          notifyListeners();
+        } catch (fallbackError) {
+          debugPrint('Fallback fetch failed: $fallbackError');
+        }
+      } else {
+        notifyListeners();
+      }
     }
   }
 
@@ -58,36 +86,96 @@ class BankProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // In a real app, this would be a Firestore Transaction or Cloud Function
-      // to ensure atomicity. For now, we update the local user balance.
+      // 1. Find the recipient user by account number
+      final recipientQuery = await _firestore
+          .collection('users')
+          .where('accountNumber', isEqualTo: toAccountNumber)
+          .limit(1)
+          .get();
 
-      // Update local state for demo purposes
-      if (_currentUser != null) {
-        final newBalance = _currentUser!.balance - amount;
+      if (recipientQuery.docs.isEmpty) {
+        throw Exception('Recipient account not found');
+      }
 
-        await _firestore.collection('users').doc(fromUserId).update({
-          'balance': newBalance,
+      final recipientDoc = recipientQuery.docs.first;
+      final recipientId = recipientDoc.id;
+      final recipientData = recipientDoc.data();
+
+      if (recipientId == fromUserId) {
+        throw Exception('Cannot transfer to your own account');
+      }
+
+      // 2. Perform Firestore Transaction
+      await _firestore.runTransaction((transaction) async {
+        // Get fresh copies of both user documents
+        final senderRef = _firestore.collection('users').doc(fromUserId);
+        final recipientRef = _firestore.collection('users').doc(recipientId);
+
+        final senderSnap = await transaction.get(senderRef);
+        final recipientSnap = await transaction.get(recipientRef);
+
+        if (!senderSnap.exists) throw Exception('Sender account not found');
+        if (!recipientSnap.exists)
+          throw Exception('Recipient account not found');
+
+        final double currentSenderBalance =
+            (senderSnap.data()?['balance'] ?? 0.0).toDouble();
+        final double currentRecipientBalance =
+            (recipientSnap.data()?['balance'] ?? 0.0).toDouble();
+
+        if (currentSenderBalance < amount) {
+          throw Exception('Insufficient funds');
+        }
+
+        // 3. Update balances
+        transaction.update(senderRef, {
+          'balance': currentSenderBalance - amount,
+        });
+        transaction.update(recipientRef, {
+          'balance': currentRecipientBalance + amount,
         });
 
-        // Record the transaction
-        await _firestore.collection('transactions').add({
+        // 4. Record Debit Transaction (for sender)
+        final senderTransactionRef = _firestore
+            .collection('transactions')
+            .doc();
+        transaction.set(senderTransactionRef, {
           'userId': fromUserId,
           'type': 'debit',
+          'category': 'transfer',
           'amount': amount,
           'description': 'Transfer to $toAccountNumber: $description',
           'date': FieldValue.serverTimestamp(),
           'status': 'completed',
         });
 
-        _currentUser = UserModel(
-          id: _currentUser!.id,
-          email: _currentUser!.email,
-          fullName: _currentUser!.fullName,
-          balance: newBalance,
-          accountNumber: _currentUser!.accountNumber,
+        // 5. Record Credit Transaction (for recipient)
+        final recipientTransactionRef = _firestore
+            .collection('transactions')
+            .doc();
+        transaction.set(recipientTransactionRef, {
+          'userId': recipientId,
+          'type': 'credit',
+          'category': 'transfer',
+          'amount': amount,
+          'description':
+              'Received from ${_currentUser?.fullName ?? "Unknown"}: $description',
+          'date': FieldValue.serverTimestamp(),
+          'status': 'completed',
+        });
+      });
+
+      // 6. Update local state
+      if (_currentUser != null) {
+        _currentUser = _currentUser!.copyWith(
+          balance: _currentUser!.balance - amount,
         );
       }
+
+      // Refresh transactions
+      await fetchTransactions(fromUserId);
     } catch (e) {
+      debugPrint('Transfer error: $e');
       rethrow;
     } finally {
       _isLoading = false;

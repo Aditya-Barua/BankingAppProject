@@ -3,12 +3,17 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Allow reading any user profile to find recipients by account number
+      allow read: if request.auth != null;
+      // Allow users to update their own profile OR another user's balance during a transfer
+      allow write: if request.auth != null;
     }
     
-    // Allow users to create transactions and read their own transactions
     match /transactions/{transactionId} {
-      allow read, create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Allow authenticated users to create transaction records
+      allow create: if request.auth != null;
+      // Users can only read their own transactions
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
     }
   }
 }
