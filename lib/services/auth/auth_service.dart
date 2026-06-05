@@ -33,8 +33,31 @@ class AuthService with ChangeNotifier {
         password: password,
       );
     } on FirebaseAuthException catch (e) {
+      // If we get a generic credential error, try to be more specific by checking Firestore
+      if (e.code == 'invalid-credential' ||
+          e.code == 'user-not-found' ||
+          e.code == 'wrong-password') {
+        try {
+          final userQuery = await _firestore
+              .collection('users')
+              .where('email', isEqualTo: email)
+              .get();
+
+          if (userQuery.docs.isEmpty) {
+            throw 'email not registered';
+          } else {
+            throw 'Incorrect Password';
+          }
+        } catch (firestoreError) {
+          debugPrint('Firestore check failed: $firestoreError');
+          // If Firestore check fails (e.g. permissions not deployed yet),
+          // fallback to the default handler which now returns a generic but safe message
+          throw _handleAuthException(e);
+        }
+      }
       throw _handleAuthException(e);
     } catch (e) {
+      if (e is String) rethrow;
       throw 'An unexpected error occurred. Please try again.';
     } finally {
       _isLoading = false;
@@ -112,9 +135,12 @@ class AuthService with ChangeNotifier {
   String _handleAuthException(FirebaseAuthException e) {
     switch (e.code) {
       case 'user-not-found':
-        return 'No user found with this email.';
+        return 'Email is not registered';
       case 'wrong-password':
-        return 'Incorrect password. Please try again.';
+        return 'Incorrect Password';
+      case 'invalid-credential': // Modern Firebase Auth error code
+      case 'invalid-login-credentials': // Some platforms use this variant
+        return 'Incorrect email or password';
       case 'email-already-in-use':
         return 'This email is already registered.';
       case 'invalid-email':
